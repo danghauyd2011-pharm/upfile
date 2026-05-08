@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>TGZap — File Transfer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════
+   TGZap — Telegram File Transfer
+   Aesthetic: Terminal × Telegram
+   Dark navy + cyan accent
+═══════════════════════════════ */
+:root {
+  --bg:      #0e1117;
+  --bg2:     #161b25;
+  --bg3:     #1c2333;
+  --bg4:     #232d42;
+  --line:    rgba(99,179,237,0.1);
+  --line2:   rgba(99,179,237,0.2);
+  --cyan:    #63b3ed;
+  --cyan2:   #90cdf4;
+  --green:   #68d391;
+  --red:     #fc8181;
+  --yellow:  #f6e05e;
+  --orange:  #f6ad55;
+  --purple:  #b794f4;
+  --text:    #e2e8f0;
+  --text2:   #718096;
+  --text3:   #2d3748;
+  --mono:    'IBM Plex Mono', monospace;
+  --sans:    'IBM Plex Sans', sans-serif;
+  --r:       10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
+
+/* grid bg */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(99,179,237,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(99,179,237,0.03) 1px,transparent 1px);
+  background-size:32px 32px;pointer-events:none;z-index:0;
+}
+
+.app{position:relative;z-index:1;max-width:460px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── HEADER ── */
+.header{
+  padding:14px 16px 12px;
+  border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;
+  background:rgba(14,17,23,0.9);
+  backdrop-filter:blur(12px);
+  position:sticky;top:0;z-index:10;
+}
+.hlogo{
+  width:36px;height:36px;
+  background:linear-gradient(135deg,#2b5de8,#63b3ed);
+  border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;flex-shrink:0;
+  box-shadow:0 0 16px rgba(99,179,237,0.3);
+}
+.htitle{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--cyan2);letter-spacing:-0.3px}
+.hsub{font-size:10px;color:var(--text2);font-family:var(--mono);margin-top:1px}
+.hstatus{
+  flex:1;text-align:right;
+  font-family:var(--mono);font-size:10px;color:var(--text2);
+}
+.hstatus.ok{color:var(--green)}
+.hstatus.err{color:var(--red)}
+.hcfg{
+  width:32px;height:32px;border:1px solid var(--line2);border-radius:8px;
+  background:var(--bg3);color:var(--text2);font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;
+}
+.hcfg:active{background:var(--bg4);color:var(--cyan)}
+
+/* ── TABS ── */
+.tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--line)}
+.tab{
+  flex:1;padding:11px 0;font-family:var(--mono);font-size:11px;font-weight:700;
+  letter-spacing:.8px;text-transform:uppercase;color:var(--text3);
+  background:none;border:none;border-bottom:2px solid transparent;
+  cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.tab.on{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tbadge{
+  background:var(--cyan);color:var(--bg);font-size:9px;font-weight:700;
+  padding:1px 5px;border-radius:99px;display:none;
+}
+.tbadge.show{display:inline-block}
+
+/* ── PAGE ── */
+.page{display:none;flex-direction:column;padding:16px;gap:12px;flex:1}
+.page.on{display:flex}
+
+/* ── DROP ZONE ── */
+.dz{
+  border:1.5px dashed var(--line2);border-radius:var(--r);
+  padding:32px 20px;text-align:center;cursor:pointer;
+  background:var(--bg2);transition:all .2s;position:relative;overflow:hidden;
+}
+.dz::after{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 110%,rgba(99,179,237,0.06),transparent 60%);
+  pointer-events:none;
+}
+.dz.over,.dz:hover{border-color:var(--cyan);background:rgba(99,179,237,0.04);box-shadow:0 0 0 1px rgba(99,179,237,0.1) inset}
+.dz-ic{font-size:36px;margin-bottom:10px;display:block}
+.dz-t{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.dz-s{font-size:11px;color:var(--text2);font-family:var(--mono)}
+
+/* ── QUEUE ── */
+.queue{display:flex;flex-direction:column;gap:6px}
+.qi{
+  display:flex;align-items:center;gap:10px;
+  background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;animation:si .18s ease;
+}
+@keyframes si{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+.qi-ic{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.qi-info{flex:1;min-width:0}
+.qi-n{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qi-s{font-family:var(--mono);font-size:10px;color:var(--text2);margin-top:2px}
+.qi-rm{width:24px;height:24px;border:none;background:rgba(252,129,129,0.1);color:var(--red);border-radius:5px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s}
+.qi-rm:active{transform:scale(.88)}
+.qi-spin{width:16px;height:16px;border:2px solid var(--line2);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.qi-ok{color:var(--green);font-size:15px;flex-shrink:0}
+.qi-er{color:var(--red);font-size:15px;flex-shrink:0}
+
+/* ── UP BTN ── */
+.upbtn{
+  width:100%;padding:13px;border:none;border-radius:var(--r);
+  background:linear-gradient(135deg,#2b5de8,var(--cyan));
+  color:white;font-family:var(--mono);font-size:12px;font-weight:700;
+  letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;
+  transition:all .2s;box-shadow:0 4px 20px rgba(99,179,237,0.2);
+}
+.upbtn:disabled{background:var(--bg3);color:var(--text3);box-shadow:none;cursor:not-allowed}
+.upbtn:not(:disabled):active{transform:scale(.98)}
+
+/* ── PROGRESS ── */
+.progwrap{display:none;flex-direction:column;gap:5px}
+.proglbl{font-family:var(--mono);font-size:10px;color:var(--text2);display:flex;justify-content:space-between}
+.progtrack{height:3px;background:var(--bg3);border-radius:99px;overflow:hidden}
+.progfill{height:100%;background:linear-gradient(90deg,#2b5de8,var(--cyan));border-radius:99px;transition:width .3s ease;width:0%}
+
+/* ── INFO BOX ── */
+.infobox{
+  background:var(--bg2);border:1px solid var(--line);border-left:2px solid var(--cyan);
+  border-radius:var(--r);padding:12px 14px;
+  font-family:var(--mono);font-size:10px;color:var(--text2);line-height:1.8;
+}
+.infobox b{color:var(--cyan)}
+
+/* ── FILES TOOLBAR ── */
+.ftbar{display:flex;gap:8px;align-items:center}
+.fsearch{
+  flex:1;display:flex;align-items:center;gap:8px;
+  background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;
+}
+.fsearch input{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:var(--sans);font-size:13px}
+.fsearch input::placeholder{color:var(--text3)}
+.fsic{font-family:var(--mono);font-size:13px;color:var(--text3)}
+.btnsm{
+  padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg2);color:var(--text2);font-family:var(--mono);font-size:10px;
+  font-weight:600;letter-spacing:.5px;cursor:pointer;white-space:nowrap;transition:all .15s;
+}
+.btnsm:hover{border-color:var(--cyan);color:var(--cyan)}
+.btnsm:active{transform:scale(.95)}
+
+/* ── GROUP ── */
+.glabel{display:flex;align-items:center;justify-content:space-between;padding:8px 0 3px}
+.gtitle{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text3)}
+.gn{font-family:var(--mono);font-size:9px;color:var(--text3);background:var(--bg3);padding:1px 6px;border-radius:4px}
+
+/* ── FILE CARD ── */
+.fcard{
+  display:flex;align-items:center;gap:10px;
+  background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;cursor:pointer;transition:all .15s;
+  animation:si .2s ease;
+}
+.fcard:hover{border-color:var(--line2);background:var(--bg3)}
+.fcard:active{transform:scale(.99)}
+.fcard.sel{border-color:var(--cyan);background:rgba(99,179,237,0.05)}
+
+.fchk{
+  width:16px;height:16px;border:1.5px solid var(--text3);border-radius:4px;
+  flex-shrink:0;transition:all .12s;display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.fchk.on{background:var(--cyan);border-color:var(--cyan)}
+.fchk.on::after{content:'✓';font-size:9px;color:var(--bg);font-weight:900}
+
+.fthumb{width:34px;height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.finfo{flex:1;min-width:0}
+.fname{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.fmeta{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--text2)}
+.fext{padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+
+.fdl{
+  width:30px;height:30px;border:1px solid var(--line);border-radius:7px;
+  background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s;
+}
+.fdl:hover{border-color:var(--cyan);color:var(--cyan)}
+.fdl:active{transform:scale(.9)}
+
+/* ── EMPTY ── */
+.empty{text-align:center;padding:52px 20px;color:var(--text3)}
+.empty-ic{font-size:40px;margin-bottom:12px;opacity:.4}
+.empty-t{font-family:var(--mono);font-size:11px;letter-spacing:1px}
+
+/* ── SKELETON ── */
+.skel{height:54px;border-radius:8px;background:linear-gradient(90deg,var(--bg2) 25%,var(--bg3) 50%,var(--bg2) 75%);background-size:200% 100%;animation:shim 1.3s infinite}
+@keyframes shim{to{background-position:-200% 0}}
+
+/* ── BULK BAR ── */
+.bulk{
+  position:fixed;bottom:-68px;left:50%;transform:translateX(-50%);
+  max-width:440px;width:calc(100% - 24px);
+  background:var(--bg3);border:1px solid var(--cyan);border-radius:99px;
+  padding:10px 14px;display:flex;align-items:center;gap:8px;z-index:20;
+  transition:bottom .3s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 0 24px rgba(99,179,237,0.15);
+}
+.bulk.up{bottom:14px}
+.bulk-txt{flex:1;font-family:var(--mono);font-size:11px;color:var(--cyan)}
+.bulk-dl{
+  padding:7px 14px;border:none;border-radius:99px;
+  background:linear-gradient(135deg,#2b5de8,var(--cyan));color:white;
+  font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;
+}
+.bulk-dl:active{transform:scale(.95)}
+.bulk-x{
+  width:28px;height:28px;border:1px solid var(--line2);border-radius:50%;
+  background:none;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;transition:all .12s;
+}
+.bulk-x:hover{color:var(--red);border-color:var(--red)}
+
+/* ── TOAST ── */
+.toast{
+  position:fixed;top:62px;right:12px;
+  background:var(--bg3);border:1px solid var(--line2);border-radius:8px;
+  padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--text);
+  box-shadow:0 8px 24px rgba(0,0,0,0.5);z-index:100;
+  opacity:0;transform:translateX(12px);transition:all .25s cubic-bezier(.34,1.56,.64,1);
+  pointer-events:none;max-width:260px;
+}
+.toast.show{opacity:1;transform:translateX(0)}
+.toast.ok{border-color:var(--green);color:var(--green)}
+.toast.fail{border-color:var(--red);color:var(--red)}
+.toast.warn{border-color:var(--yellow);color:var(--yellow)}
+
+/* ── MODAL ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(6px);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.overlay.hidden{display:none}
+.modal{
+  width:100%;max-width:460px;background:var(--bg2);border:1px solid var(--line2);
+  border-bottom:none;border-radius:12px 12px 0 0;
+  padding:24px 20px 36px;animation:sup .28s cubic-bezier(.34,1.56,.64,1);
+  max-height:88vh;overflow-y:auto;
+}
+@keyframes sup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.mhead{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--cyan);letter-spacing:1px;margin-bottom:4px}
+.msub{font-size:12px;color:var(--text2);margin-bottom:20px;line-height:1.7}
+.msub a{color:var(--cyan);text-decoration:none}
+
+.field{margin-bottom:14px}
+.flbl{display:block;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
+.finp{
+  width:100%;background:var(--bg3);border:1px solid var(--line2);border-radius:8px;
+  padding:11px 13px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .15s;
+}
+.finp:focus{border-color:var(--cyan)}
+.fhint{font-size:11px;color:var(--text2);margin-top:5px;line-height:1.6}
+.fhint a{color:var(--cyan);text-decoration:none}
+.fhint code{font-family:var(--mono);background:var(--bg4);padding:1px 5px;border-radius:3px;color:var(--purple)}
+
+.mbtn{
+  width:100%;margin-top:8px;padding:13px;border:none;border-radius:var(--r);
+  background:linear-gradient(135deg,#2b5de8,var(--cyan));color:white;
+  font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+  cursor:pointer;transition:all .2s;box-shadow:0 4px 20px rgba(99,179,237,0.2);
+}
+.mbtn:disabled{background:var(--bg3);color:var(--text3);box-shadow:none;cursor:not-allowed}
+.mbtn:not(:disabled):active{transform:scale(.98)}
+
+/* ── PREVIEW ── */
+.phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px}
+.pname{font-family:var(--mono);font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.px{width:28px;height:28px;border:1px solid var(--line2);border-radius:7px;background:var(--bg3);color:var(--text2);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pinfo{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.pchip{background:var(--bg3);border:1px solid var(--line);border-radius:5px;padding:3px 9px;font-family:var(--mono);font-size:10px;color:var(--text2)}
+.pimg{width:100%;border-radius:8px;margin-bottom:14px}
+.pph{text-align:center;padding:28px;font-size:44px;margin-bottom:14px}
+.pacts{display:flex;gap:8px}
+.pbtn{flex:1;padding:11px;border:1px solid var(--line2);border-radius:8px;background:var(--bg3);color:var(--text);font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.5px;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+.pbtn:active{transform:scale(.97)}
+.pbtn.pr{background:linear-gradient(135deg,#2b5de8,var(--cyan));border:none;color:white;box-shadow:0 4px 16px rgba(99,179,237,0.2)}
+
+/* ── FILE COLORS ── */
+.c-img{background:rgba(252,129,129,.12);color:var(--red)}
+.c-vid{background:rgba(246,173,85,.12);color:var(--orange)}
+.c-doc{background:rgba(99,179,237,.12);color:var(--cyan)}
+.c-zip{background:rgba(246,224,94,.12);color:var(--yellow)}
+.c-code{background:rgba(104,211,145,.12);color:var(--green)}
+.c-pdf{background:rgba(252,129,129,.12);color:var(--red)}
+.c-aud{background:rgba(183,148,244,.12);color:var(--purple)}
+.c-def{background:rgba(113,128,150,.12);color:var(--text2)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="hlogo">✈️</div>
+    <div>
+      <div class="htitle">TGZap</div>
+      <div class="hsub">Telegram File Transfer</div>
+    </div>
+    <div class="hstatus" id="hst">Chưa cấu hình</div>
+    <button class="hcfg" onclick="openCfg()">⚙</button>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab on" onclick="goTab('up',this)"><span>↑</span>Upload</button>
+    <button class="tab"   onclick="goTab('fl',this)"><span>☰</span>Files<span class="tbadge" id="badge">0</span></button>
+  </div>
+
+  <!-- ═══ UPLOAD PAGE ═══ -->
+  <div class="page on" id="pg-up">
+
+    <div class="dz" id="dz" onclick="document.getElementById('fi').click()">
+      <span class="dz-ic">📨</span>
+      <div class="dz-t">Chọn hoặc kéo file vào đây</div>
+      <div class="dz-s">Tối đa 50MB · Mọi định dạng · Lưu trên Telegram</div>
+      <input type="file" id="fi" multiple hidden onchange="onPick(this.files)">
+    </div>
+
+    <div class="queue" id="queue"></div>
+
+    <button class="upbtn" id="upbtn" disabled onclick="doUpload()">GỬI LÊN TELEGRAM</button>
+
+    <div class="progwrap" id="progwrap">
+      <div class="proglbl"><span id="proglbl">Đang upload...</span><span id="progpct">0%</span></div>
+      <div class="progtrack"><div class="progfill" id="progfill"></div></div>
+    </div>
+
+    <div class="infobox">
+      <b>✈️ Telegram làm storage:</b><br>
+      File upload lên Telegram Bot, lưu vĩnh viễn.<br>
+      Tải về bằng link trực tiếp từ server Telegram.<br>
+      <b>Giới hạn:</b> 50MB/file · Không tốn phí · Không hết hạn.
+    </div>
+
+  </div>
+
+  <!-- ═══ FILES PAGE ═══ -->
+  <div class="page" id="pg-fl">
+    <div class="ftbar">
+      <div class="fsearch">
+        <span class="fsic">⌕</span>
+        <input type="text" placeholder="Tìm file..." oninput="filterFiles(this.value)">
+      </div>
+      <button class="btnsm" onclick="loadFiles()">↻</button>
+      <button class="btnsm" onclick="dlAll()">⬇ All</button>
+    </div>
+    <div id="filelist"></div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- BULK BAR -->
+<div class="bulk" id="bulk">
+  <span class="bulk-txt" id="bulk-txt">0 file</span>
+  <button class="bulk-dl" onclick="dlSel()">⬇ Tải xuống</button>
+  <button class="bulk-x"  onclick="clearSel()">✕</button>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- ═══ CONFIG MODAL ═══ -->
+<div class="overlay" id="cfg-ov" onclick="ovClick(event,'cfg-ov')">
+<div class="modal">
+  <div class="mhead">// CẤU HÌNH TELEGRAM BOT</div>
+  <div class="msub">
+    Tạo bot miễn phí tại <a href="https://t.me/BotFather" target="_blank">@BotFather</a> trên Telegram.<br>
+    Xem hướng dẫn chi tiết bên dưới.
+  </div>
+
+  <div class="field">
+    <label class="flbl">Bot Token</label>
+    <input class="finp" id="cfg-token" type="password" placeholder="1234567890:ABCdef...">
+    <div class="fhint">Lấy từ <a href="https://t.me/BotFather" target="_blank">@BotFather</a> → /newbot → copy token</div>
+  </div>
+
+  <div class="field">
+    <label class="flbl">Chat ID</label>
+    <input class="finp" id="cfg-chatid" type="text" placeholder="-1001234567890">
+    <div class="fhint">
+      Chat ID của channel/group/chat để lưu file.<br>
+      Xem hướng dẫn lấy Chat ID bên dưới ↓
+    </div>
+  </div>
+
+  <button class="mbtn" id="cfg-btn" onclick="saveCfg()">LƯU & KẾT NỐI</button>
+
+  <!-- Hướng dẫn -->
+  <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+    <div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:12px">// HƯỚNG DẪN SETUP</div>
+
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:2">
+      <b style="color:var(--cyan)">BƯỚC 1 — Tạo Bot:</b><br>
+      1. Mở Telegram → tìm <code>@BotFather</code><br>
+      2. Gõ <code>/newbot</code><br>
+      3. Đặt tên bot (vd: MyFileBot)<br>
+      4. Copy token dạng <code>123456:ABCdef...</code><br><br>
+
+      <b style="color:var(--cyan)">BƯỚC 2 — Lấy Chat ID (chọn 1 trong 2):</b><br>
+      <b style="color:var(--green)">Cách A — Chat riêng với bot (dễ nhất):</b><br>
+      1. Tìm bot vừa tạo trên Telegram<br>
+      2. Bấm <code>Start</code><br>
+      3. Mở link này (thay TOKEN):<br>
+      <code style="word-break:break-all">https://api.telegram.org/bot<b>TOKEN</b>/getUpdates</code><br>
+      4. Copy số <code>"id"</code> trong phần <code>"chat"</code><br><br>
+
+      <b style="color:var(--green)">Cách B — Dùng Group/Channel:</b><br>
+      1. Tạo group/channel mới<br>
+      2. Thêm bot vào làm admin<br>
+      3. Gửi 1 tin nhắn bất kỳ vào group<br>
+      4. Mở link getUpdates như trên<br>
+      5. Chat ID dạng <code>-100xxxxxxxxxx</code><br>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══ PREVIEW MODAL ═══ -->
+<div class="overlay hidden" id="prev-ov" onclick="ovClick(event,'prev-ov')">
+<div class="modal">
+  <div class="phead">
+    <div class="pname" id="pname"></div>
+    <button class="px" onclick="closeOv('prev-ov')">✕</button>
+  </div>
+  <div class="pinfo" id="pinfo"></div>
+  <div id="pbody"></div>
+  <div class="pacts">
+    <button class="pbtn pr" id="pdl">⬇ Tải về</button>
+    <button class="pbtn"    id="pcp">⎘ Copy link</button>
+  </div>
+</div>
+</div>
+
+<script>
+/* ═══════════════════════════════════
+   TGZap — Telegram Bot Storage
+   ═══════════════════════════════════
+   Kiến trúc:
+   - Upload: sendDocument API → Telegram lưu file
+   - List:   lưu metadata vào localStorage (tên, size, file_id, date, url)
+   - Download: getFile API → lấy file_path → tải về
+   ═══════════════════════════════════ */
+
+const TG       = 'https://api.telegram.org';
+const CFG_KEY  = 'tgzap_cfg';
+const FILES_KEY= 'tgzap_files';   // metadata lưu local
+
+let cfg       = {};    // { token, chatId }
+let fileStore = [];    // array of { id, name, size, fileId, date, mimeType }
+let allFiles  = [];    // filtered view
+let queue     = [];
+let selected  = new Set();
+let lastUp    = 0;
+
+// ── BOOT ────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  cfg       = load(CFG_KEY);
+  fileStore = load(FILES_KEY) || [];
+  if (!Array.isArray(fileStore)) fileStore = [];
+
+  setupDrop();
+
+  if (!cfg.token || !cfg.chatId) {
+    openCfg();
+  } else {
+    initApp();
+  }
+});
+
+async function initApp() {
+  setSt('Đang kết nối...', '');
+  const ok = await pingBot();
+  if (!ok) {
+    setSt('Token sai hoặc lỗi mạng', 'err');
+    openCfg();
+    return;
+  }
+  setSt('Bot online ✓', 'ok');
+  loadFiles();
+}
+
+// ── TELEGRAM API ─────────────────────────────────
+async function tgGet(method, params = {}) {
+  const url = new URL(`${TG}/bot${cfg.token}/${method}`);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  const r = await fetch(url.toString());
+  return r.json();
+}
+
+async function pingBot() {
+  try {
+    const r = await tgGet('getMe');
+    return r.ok === true;
+  } catch { return false; }
+}
+
+// ── CONFIG ───────────────────────────────────────
+function openCfg() {
+  document.getElementById('cfg-ov').classList.remove('hidden');
+  if (cfg.token)  document.getElementById('cfg-token').value  = cfg.token;
+  if (cfg.chatId) document.getElementById('cfg-chatid').value = cfg.chatId;
+}
+
+async function saveCfg() {
+  const token  = document.getElementById('cfg-token').value.trim();
+  const chatId = document.getElementById('cfg-chatid').value.trim();
+
+  if (!token)  return toast('Nhập Bot Token', 'warn');
+  if (!chatId) return toast('Nhập Chat ID', 'warn');
+  if (!token.includes(':')) return toast('Token không đúng định dạng', 'warn');
+
+  const btn = document.getElementById('cfg-btn');
+  btn.disabled = true; btn.textContent = 'ĐANG KIỂM TRA...';
+
+  // Verify token
+  try {
+    const r = await fetch(`${TG}/bot${token}/getMe`);
+    const d = await r.json();
+    if (!d.ok) {
+      btn.disabled = false; btn.textContent = 'LƯU & KẾT NỐI';
+      return toast('Token sai: ' + (d.description || ''), 'fail');
+    }
+
+    // Test gửi tin nhắn để verify chatId
+    const r2 = await fetch(`${TG}/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: '✅ TGZap đã kết nối thành công!\nBot: @' + d.result.username
+      })
+    });
+    const d2 = await r2.json();
+    if (!d2.ok) {
+      btn.disabled = false; btn.textContent = 'LƯU & KẾT NỐI';
+      return toast('Chat ID sai: ' + (d2.description || ''), 'fail');
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'LƯU & KẾT NỐI';
+    return toast('Lỗi kết nối: ' + e.message, 'fail');
+  }
+
+  cfg = { token, chatId };
+  save(CFG_KEY, cfg);
+
+  btn.disabled = false; btn.textContent = 'LƯU & KẾT NỐI';
+  closeOv('cfg-ov');
+  setSt('Bot online ✓', 'ok');
+
+  goTab('up', document.querySelector('.tab'));
+  toast('✓ Kết nối Telegram thành công!', 'ok');
+  loadFiles();
+}
+
+// ── LOAD FILES (từ localStorage) ─────────────────
+function loadFiles() {
+  fileStore = load(FILES_KEY) || [];
+  if (!Array.isArray(fileStore)) fileStore = [];
+
+  allFiles = [...fileStore].sort((a,b) => new Date(b.date) - new Date(a.date));
+  renderFiles(allFiles);
+  updateBadge();
+  setSt(`Bot online · ${fileStore.length} files`, 'ok');
+}
+
+// ── RENDER ───────────────────────────────────────
+function renderFiles(files) {
+  const el = document.getElementById('filelist');
+  selected.clear(); updBulk();
+
+  if (!files.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-ic">📭</div><div class="empty-t">CHƯA CÓ FILE NÀO</div></div>`;
+    return;
+  }
+
+  const sorted = [...files].sort((a,b) => new Date(b.date) - new Date(a.date));
+  const groups = {};
+  sorted.forEach(f => {
+    const lbl = dayLbl(f.date);
+    if (!groups[lbl]) groups[lbl] = [];
+    groups[lbl].push(f);
+  });
+
+  let html = '';
+  for (const [lbl, grp] of Object.entries(groups)) {
+    html += `<div class="glabel"><span class="gtitle">${lbl}</span><span class="gn">${grp.length}</span></div>`;
+    grp.forEach(f => {
+      const ext = extOf(f.name);
+      const tc  = tcol(ext);
+      const fid = fhash(f.id || f.name);
+      html += `
+        <div class="fcard" id="fc-${fid}" onclick="cardClick(event,'${fid}',${JSON.stringify(f)})">
+          <div class="fchk ${selected.has(f.id)?'on':''}" id="chk-${fid}" onclick="togSel(event,'${fid}',${JSON.stringify(f.id)})"></div>
+          <div class="fthumb ${tc}">${ficon(ext)}</div>
+          <div class="finfo">
+            <div class="fname">${esc(f.name)}</div>
+            <div class="fmeta">
+              <span>${fmtSz(f.size)}</span>
+              <span>·</span>
+              <span>${shortT(f.date)}</span>
+              <span class="fext ${tc}">${ext||'file'}</span>
+            </div>
+          </div>
+          <button class="fdl" onclick="event.stopPropagation();dlFile(${JSON.stringify(f)})" title="Tải">⬇</button>
+        </div>`;
+    });
+  }
+  el.innerHTML = html;
+}
+
+function filterFiles(q) {
+  const s = q.toLowerCase().trim();
+  renderFiles(s ? allFiles.filter(f => f.name.toLowerCase().includes(s)) : allFiles);
+}
+
+function updateBadge() {
+  const b = document.getElementById('badge');
+  b.textContent = fileStore.length;
+  b.classList.toggle('show', fileStore.length > 0);
+}
+
+// ── UPLOAD QUEUE ─────────────────────────────────
+function onPick(files) {
+  let skip = 0;
+  Array.from(files).forEach(f => {
+    if (f.size > 50*1024*1024) { skip++; return; }
+    queue.push({ id: Date.now()+Math.random(), file: f, status: 'pending' });
+  });
+  if (skip) toast(`${skip} file vượt 50MB, bỏ qua`, 'warn');
+  renderQueue(); syncBtn();
+  document.getElementById('fi').value = '';
+}
+
+function renderQueue() {
+  const el = document.getElementById('queue');
+  if (!queue.length) { el.innerHTML=''; return; }
+  el.innerHTML = queue.map(q => {
+    const ext=extOf(q.file.name), tc=tcol(ext);
+    const si = q.status==='done'    ? `<span class="qi-ok">✓</span>`
+             : q.status==='error'   ? `<span class="qi-er">✗</span>`
+             : q.status==='loading' ? `<div class="qi-spin"></div>`
+             : `<button class="qi-rm" onclick="rmQ(${q.id})">✕</button>`;
+    return `
+      <div class="qi">
+        <div class="qi-ic ${tc}">${ficon(ext)}</div>
+        <div class="qi-info">
+          <div class="qi-n">${esc(q.file.name)}</div>
+          <div class="qi-s">${fmtSz(q.file.size)}</div>
+        </div>
+        ${si}
+      </div>`;
+  }).join('');
+}
+
+function rmQ(id) { queue=queue.filter(q=>q.id!==id); renderQueue(); syncBtn(); }
+
+function syncBtn() {
+  const n = queue.filter(q=>q.status==='pending').length;
+  const btn = document.getElementById('upbtn');
+  btn.disabled = n===0 || !cfg.token;
+  btn.textContent = n>1 ? `GỬI ${n} FILES LÊN TELEGRAM` : 'GỬI LÊN TELEGRAM';
+}
+
+// ── UPLOAD ───────────────────────────────────────
+async function doUpload() {
+  const now = Date.now();
+  if (now - lastUp < 3000) return toast('Chờ 3s giữa các lần upload', 'warn');
+  if (!cfg.token) return toast('Chưa cấu hình Bot', 'warn');
+
+  const pending = queue.filter(q=>q.status==='pending');
+  if (!pending.length) return;
+
+  document.getElementById('upbtn').disabled = true;
+  showProg(0, 'Chuẩn bị...');
+
+  let done = 0;
+  for (const item of pending) {
+    item.status = 'loading';
+    renderQueue();
+    showProg(Math.round(done/pending.length*100), `↑ ${item.file.name}`);
+
+    try {
+      const meta = await uploadToTelegram(item.file);
+      // Lưu metadata vào localStorage
+      fileStore.unshift(meta);
+      save(FILES_KEY, fileStore);
+      item.status = 'done';
+      done++;
+    } catch(e) {
+      item.status = 'error';
+      console.error(e);
+      toast('Lỗi: ' + e.message, 'fail');
+    }
+    renderQueue();
+    showProg(Math.round(done/pending.length*100));
+  }
+
+  lastUp = Date.now();
+  hideProg();
+
+  if (done > 0) {
+    toast(`✓ Đã gửi ${done}/${pending.length} file lên Telegram`, 'ok');
+    setTimeout(() => {
+      queue = queue.filter(q=>q.status!=='done');
+      renderQueue(); syncBtn();
+      goTab('fl', document.querySelectorAll('.tab')[1]);
+      loadFiles();
+    }, 1200);
+  } else {
+    syncBtn();
+  }
+}
+
+async function uploadToTelegram(file) {
+  const fd = new FormData();
+  fd.append('chat_id', cfg.chatId);
+  fd.append('document', file, file.name);
+  fd.append('caption', `📁 ${file.name}\n📦 ${fmtSz(file.size)}\n🕐 ${new Date().toLocaleString('vi-VN')}`);
+
+  const r = await fetch(`${TG}/bot${cfg.token}/sendDocument`, {
+    method: 'POST',
+    body: fd
+  });
+
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.description || 'Telegram API lỗi');
+
+  const doc = d.result.document;
+
+  // Lấy download URL qua getFile
+  const fileInfo = await tgGet('getFile', { file_id: doc.file_id });
+  const filePath = fileInfo.result?.file_path || '';
+  const dlUrl    = filePath ? `${TG}/file/bot${cfg.token}/${filePath}` : '';
+
+  return {
+    id:       doc.file_id,
+    name:     file.name,
+    size:     doc.file_size || file.size,
+    fileId:   doc.file_id,
+    filePath: filePath,
+    url:      dlUrl,
+    mimeType: file.type || 'application/octet-stream',
+    date:     new Date().toISOString(),
+    msgId:    d.result.message_id
+  };
+}
+
+// ── DOWNLOAD ─────────────────────────────────────
+async function dlFile(f) {
+  toast(`⬇ Đang tải ${f.name}...`);
+  try {
+    // Lấy lại file_path mới (có thể hết hạn sau vài giờ)
+    const fi = await tgGet('getFile', { file_id: f.fileId });
+    if (!fi.ok) throw new Error(fi.description || 'Không lấy được link');
+
+    const url = `${TG}/file/bot${cfg.token}/${fi.result.file_path}`;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: f.name
+    });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(`✓ Tải xong: ${f.name}`, 'ok');
+  } catch(e) {
+    toast('Lỗi tải: ' + e.message, 'fail');
+  }
+}
+
+async function dlSel() {
+  if (!selected.size) return;
+  for (const id of selected) {
+    const f = fileStore.find(x=>x.id===id);
+    if (f) { await dlFile(f); await sleep(500); }
+  }
+  clearSel();
+}
+
+async function dlAll() {
+  if (!fileStore.length) return toast('Không có file', 'warn');
+  toast(`⬇ Tải ${fileStore.length} files...`);
+  for (const f of fileStore) { await dlFile(f); await sleep(600); }
+}
+
+// ── SELECT ───────────────────────────────────────
+function cardClick(e, fid, f) {
+  if (e.target.classList.contains('fchk') || e.target.closest('.fdl')) return;
+  openPrev(f);
+}
+
+function togSel(e, fid, id) {
+  e.stopPropagation();
+  const chk  = document.getElementById(`chk-${fid}`);
+  const card = document.getElementById(`fc-${fid}`);
+  if (selected.has(id)) {
+    selected.delete(id); chk.classList.remove('on'); card.classList.remove('sel');
+  } else {
+    selected.add(id); chk.classList.add('on'); card.classList.add('sel');
+  }
+  updBulk();
+}
+
+function updBulk() {
+  const bar = document.getElementById('bulk');
+  bar.classList.toggle('up', selected.size>0);
+  document.getElementById('bulk-txt').textContent = `${selected.size} file được chọn`;
+}
+
+function clearSel() {
+  selected.clear();
+  document.querySelectorAll('.fchk.on').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('.fcard.sel').forEach(e=>e.classList.remove('sel'));
+  updBulk();
+}
+
+// ── PREVIEW ──────────────────────────────────────
+function openPrev(f) {
+  document.getElementById('pname').textContent = f.name;
+  const ext = extOf(f.name);
+  document.getElementById('pinfo').innerHTML =
+    `<span class="pchip">${ext||'file'}</span>
+     <span class="pchip">${fmtSz(f.size)}</span>
+     <span class="pchip">🕐 ${new Date(f.date).toLocaleString('vi-VN')}</span>`;
+
+  const body = document.getElementById('pbody');
+  if (['jpg','jpeg','png','gif','webp'].includes(ext) && f.url) {
+    body.innerHTML = `<img class="pimg" src="${f.url}" loading="lazy">`;
+  } else {
+    body.innerHTML = `<div class="pph">${ficon(ext)}</div>`;
+  }
+
+  document.getElementById('pdl').onclick = () => dlFile(f);
+  document.getElementById('pcp').onclick = () => {
+    if (f.url) {
+      navigator.clipboard.writeText(f.url)
+        .then(()=>toast('Đã copy link', 'ok'))
+        .catch(()=>prompt('Copy link:', f.url));
+    } else toast('Không có link trực tiếp', 'warn');
+  };
+
+  document.getElementById('prev-ov').classList.remove('hidden');
+}
+
+// ── DRAG & DROP ───────────────────────────────────
+function setupDrop() {
+  const z = document.getElementById('dz');
+  z.addEventListener('dragover', e=>{e.preventDefault();z.classList.add('over')});
+  z.addEventListener('dragleave', ()=>z.classList.remove('over'));
+  z.addEventListener('drop', e=>{
+    e.preventDefault(); z.classList.remove('over');
+    onPick(e.dataTransfer.files);
+  });
+}
+
+// ── PROGRESS ─────────────────────────────────────
+function showProg(pct, lbl) {
+  document.getElementById('progwrap').style.display='flex';
+  document.getElementById('progfill').style.width=pct+'%';
+  document.getElementById('progpct').textContent=pct+'%';
+  if(lbl) document.getElementById('proglbl').textContent=lbl;
+}
+function hideProg() {
+  showProg(100);
+  setTimeout(()=>{ document.getElementById('progwrap').style.display='none'; }, 600);
+}
+
+// ── UI ────────────────────────────────────────────
+function goTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('pg-'+name).classList.add('on');
+}
+
+function setSt(txt, cls) {
+  const el = document.getElementById('hst');
+  el.textContent=txt; el.className='hstatus'+(cls?' '+cls:'');
+}
+
+let _tt;
+function toast(msg, type='') {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='toast show'+(type?' '+type:'');
+  clearTimeout(_tt); _tt=setTimeout(()=>el.classList.remove('show'), 3200);
+}
+
+function ovClick(e,id) { if(e.target===document.getElementById(id)) closeOv(id); }
+function closeOv(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ── DATE ─────────────────────────────────────────
+function dayLbl(iso) {
+  if(!iso) return 'KHÔNG XÁC ĐỊNH';
+  const d=new Date(iso), now=new Date();
+  const diff=Math.floor((now-d)/86400000);
+  if(diff===0) return 'HÔM NAY';
+  if(diff===1) return 'HÔM QUA';
+  if(diff<7)   return diff+' NGÀY TRƯỚC';
+  return d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}).toUpperCase();
+}
+function shortT(iso) {
+  if(!iso) return '';
+  return new Date(iso).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+}
+
+// ── UTILS ─────────────────────────────────────────
+function load(k)    { try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null} }
+function save(k,v)  { localStorage.setItem(k,JSON.stringify(v)) }
+function sleep(ms)  { return new Promise(r=>setTimeout(r,ms)) }
+function esc(s)     { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+function fhash(n)   { return 'f'+Math.abs(String(n).split('').reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0)|0,0)).toString(36) }
+function extOf(n)   { const p=(n||'').split('.'); return p.length>1?p.pop().toLowerCase():'' }
+function fmtSz(b)   {
+  if(!b) return '—';
+  if(b<1024) return b+'B';
+  if(b<1024**2) return (b/1024).toFixed(1)+'KB';
+  if(b<1024**3) return (b/1024**2).toFixed(1)+'MB';
+  return (b/1024**3).toFixed(2)+'GB';
+}
+function tcol(ext) {
+  if(['jpg','jpeg','png','gif','webp','svg','heic','avif'].includes(ext)) return 'c-img';
+  if(['mp4','mov','avi','mkv','webm'].includes(ext))                      return 'c-vid';
+  if(['doc','docx','xls','xlsx','ppt','pptx'].includes(ext))              return 'c-doc';
+  if(['zip','rar','7z','tar','gz'].includes(ext))                         return 'c-zip';
+  if(['js','ts','py','html','css','json','sh','go','rs'].includes(ext))   return 'c-code';
+  if(ext==='pdf')                                                          return 'c-pdf';
+  if(['mp3','wav','aac','ogg','flac'].includes(ext))                      return 'c-aud';
+  return 'c-def';
+}
+function ficon(ext) {
+  return ({jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🎞',webp:'🖼',heic:'🖼',svg:'🎨',
+    mp4:'🎬',mov:'🎬',avi:'🎬',mkv:'🎬',webm:'🎬',
+    doc:'📄',docx:'📄',xls:'📊',xlsx:'📊',ppt:'📑',pptx:'📑',pdf:'📕',
+    zip:'📦',rar:'📦','7z':'📦',tar:'📦',gz:'📦',
+    js:'💻',ts:'💻',py:'🐍',html:'🌐',css:'🎨',json:'⚙️',
+    mp3:'🎵',wav:'🎵',aac:'🎵',ogg:'🎵',flac:'🎵',
+    txt:'📝',md:'📝'})[ext]||'📁';
+}
+</script>
+</body>
+</html>
