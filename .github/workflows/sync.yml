@@ -1,0 +1,238 @@
+name: 🔄 Sync Telegram Files
+
+on:
+  schedule:
+    # Chạy mỗi 5 phút để auto-sync
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force full resync'
+        required: false
+        default: 'false'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync Telegram → files.json
+        env:
+          TG_TOKEN:  ${{ secrets.TG_TOKEN }}
+          TG_CHATID: ${{ secrets.TG_CHATID }}
+        run: |
+          python3 << 'PYEOF'
+          import os, json, urllib.request, urllib.parse, time, sys
+
+          TOKEN  = os.environ['TG_TOKEN']
+          CHATID = os.environ['TG_CHATID']
+          BASE   = f"https://api.telegram.org/bot{TOKEN}"
+          FILES_JSON = "files.json"
+
+          def tg(method, params={}):
+              url = f"{BASE}/{method}?" + urllib.parse.urlencode(params)
+              try:
+                  with urllib.request.urlopen(url, timeout=15) as r:
+                      return json.loads(r.read())
+              except Exception as e:
+                  print(f"  API error {method}: {e}")
+                  return {"ok": False}
+
+          def get_file_url(file_id):
+              """Lấy direct URL mới nhất cho file_id"""
+              r = tg("getFile", {"file_id": file_id})
+              if r.get("ok") and r["result"].get("file_path"):
+                  path = r["result"]["file_path"]
+                  return f"https://api.telegram.org/file/bot{TOKEN}/{path}", path
+              return None, None
+
+          # Load existing files.json
+          existing = {}
+          if os.path.exists(FILES_JSON):
+              try:
+                  with open(FILES_JSON) as f:
+                      data = json.load(f)
+                  for item in data.get("files", []):
+                      existing[item["file_id"]] = item
+              except:
+                  pass
+
+          print(f"Existing files: {len(existing)}")
+
+          # Fetch all messages from Telegram
+          all_files = {}
+          chunk_groups = {}  # groupId -> chunks
+          offset = 0
+
+          # Dùng getUpdates với offset để lấy tất cả
+          # Lấy tối đa 100 updates mỗi lần
+          params = {
+              "limit": 100,
+              "allowed_updates": '["message","channel_post"]'
+          }
+
+          r = tg("getUpdates", params)
+          if not r.get("ok"):
+              print("getUpdates failed:", r)
+              sys.exit(0)
+
+          updates = r.get("result", [])
+          print(f"Got {len(updates)} updates from Telegram")
+
+          for upd in updates:
+              msg = upd.get("message") or upd.get("channel_post")
+              if not msg:
+                  continue
+              if str(msg.get("chat", {}).get("id", "")) != str(CHATID):
+                  continue
+
+              doc = msg.get("document")
+              if not doc:
+                  continue
+
+              file_id   = doc["file_id"]
+              file_name = doc.get("file_name", f"file_{file_id}")
+              file_size = doc.get("file_size", 0)
+              mime_type = doc.get("mime_type", "application/octet-stream")
+              msg_date  = msg.get("date", 0)
+              msg_id    = msg.get("message_id", 0)
+              caption   = msg.get("caption", "")
+
+              # Detect chunked file
+              chunk_info = None
+              import re
+              m = re.search(r'GROUP:([^|]+)\|PART:(\d+)\|TOTAL:(\d+)', caption)
+              if m:
+                  chunk_info = {
+                      "group_id": m.group(1),
+                      "part":     int(m.group(2)),
+                      "total":    int(m.group(3))
+                  }
+
+              # Lấy direct URL (refresh nếu đã có hoặc lần đầu)
+              use_existing_url = False
+              if file_id in existing:
+                  # Giữ URL cũ, chỉ refresh nếu > 12h
+                  old = existing[file_id]
+                  age_h = (time.time() - old.get("url_updated_at", 0)) / 3600
+                  if age_h < 12:
+                      use_existing_url = True
+
+              if use_existing_url:
+                  dl_url  = existing[file_id]["url"]
+                  fp      = existing[file_id].get("file_path", "")
+              else:
+                  print(f"  getFile: {file_name}")
+                  dl_url, fp = get_file_url(file_id)
+                  time.sleep(0.1)  # rate limit
+
+              if not dl_url:
+                  print(f"  Skip (no URL): {file_name}")
+                  continue
+
+              entry = {
+                  "file_id":        file_id,
+                  "name":           file_name,
+                  "size":           file_size,
+                  "mime_type":      mime_type,
+                  "url":            dl_url,
+                  "file_path":      fp or "",
+                  "date":           msg_date,
+                  "msg_id":         msg_id,
+                  "url_updated_at": int(time.time()) if not use_existing_url else existing.get(file_id, {}).get("url_updated_at", 0),
+                  "chunk_info":     chunk_info
+              }
+
+              if chunk_info:
+                  gid = chunk_info["group_id"]
+                  if gid not in chunk_groups:
+                      real_name = re.sub(r'\.part\d+of\d+$', '', file_name)
+                      # Lấy size từ caption
+                      sm = re.search(r'📦 ([\d.]+)(GB|MB|KB|B)', caption)
+                      total_size = 0
+                      if sm:
+                          units = {"B":1,"KB":1024,"MB":1024**2,"GB":1024**3}
+                          total_size = int(float(sm.group(1)) * units.get(sm.group(2), 1))
+                      chunk_groups[gid] = {
+                          "group_id":    gid,
+                          "name":        real_name,
+                          "size":        total_size or file_size,
+                          "mime_type":   mime_type,
+                          "date":        msg_date,
+                          "is_chunked":  True,
+                          "total_chunks": chunk_info["total"],
+                          "chunks":      {}
+                      }
+                  chunk_groups[gid]["chunks"][chunk_info["part"]] = {
+                      "file_id":   file_id,
+                      "url":       dl_url,
+                      "file_path": fp or ""
+                  }
+              else:
+                  all_files[file_id] = entry
+
+          # Gộp chunked files
+          for gid, grp in chunk_groups.items():
+              chunks_sorted = [grp["chunks"].get(i) for i in range(grp["total_chunks"]) if grp["chunks"].get(i)]
+              if not chunks_sorted:
+                  continue
+              all_files[gid] = {
+                  "file_id":      gid,
+                  "name":         grp["name"],
+                  "size":         grp["size"],
+                  "mime_type":    grp["mime_type"],
+                  "url":          chunks_sorted[0]["url"],
+                  "file_path":    chunks_sorted[0]["file_path"],
+                  "date":         grp["date"],
+                  "msg_id":       0,
+                  "url_updated_at": int(time.time()),
+                  "is_chunked":   True,
+                  "total_chunks": grp["total_chunks"],
+                  "group_id":     gid,
+                  "chunks":       chunks_sorted
+              }
+
+          # ── CLEANUP: xoá file không còn trong Telegram ──
+          # File trong existing nhưng không có trong all_files -> đã bị xoá trên Telegram
+          removed = []
+          for fid in existing:
+              if fid not in all_files:
+                  removed.append(existing[fid]["name"])
+
+          if removed:
+              print(f"Removed {len(removed)} files no longer on Telegram: {removed}")
+
+          # Sort theo date mới nhất
+          files_list = sorted(all_files.values(), key=lambda x: x["date"], reverse=True)
+
+          output = {
+              "updated_at": int(time.time()),
+              "total":      len(files_list),
+              "files":      files_list
+          }
+
+          with open(FILES_JSON, "w", encoding="utf-8") as f:
+              json.dump(output, f, ensure_ascii=False, indent=2)
+
+          print(f"✅ Saved {len(files_list)} files to files.json")
+          if removed:
+              print(f"🗑 Cleaned up {len(removed)} deleted files")
+          PYEOF
+
+      - name: Commit files.json
+        run: |
+          git config user.name  "TGZap Bot"
+          git config user.email "bot@tgzap.app"
+          git add files.json
+          if git diff --staged --quiet; then
+            echo "No changes to files.json"
+          else
+            COUNT=$(python3 -c "import json; d=json.load(open('files.json')); print(d['total'])")
+            git commit -m "🔄 sync: $COUNT files from Telegram"
+            git push
+          fi
